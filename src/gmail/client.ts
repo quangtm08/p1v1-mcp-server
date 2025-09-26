@@ -30,15 +30,39 @@ export interface EmailListOptions {
 export class GmailClient {
   private gmail: any;
   private auth: GmailAuth;
+  private userId?: string;
 
-  constructor() {
+  constructor(userId?: string) {
+    this.userId = userId;
     this.auth = new GmailAuth();
-    this.gmail = google.gmail({ version: 'v1', auth: this.auth.getAuth() });
+  }
+
+  private async getGmailClient() {
+    if (!this.gmail) {
+      const authClient = await this.auth.getAuth(this.userId);
+      this.gmail = google.gmail({ version: 'v1', auth: authClient });
+    }
+    
+    // Check if token needs refresh
+    if (this.userId && await this.auth.isTokenExpired(this.userId)) {
+      try {
+        await this.auth.refreshToken(this.userId);
+        // Recreate Gmail client with refreshed token
+        const authClient = await this.auth.getAuth(this.userId);
+        this.gmail = google.gmail({ version: 'v1', auth: authClient });
+      } catch (error) {
+        console.error('Failed to refresh token:', error);
+        throw new Error('Token refresh failed. Please re-authenticate.');
+      }
+    }
+    
+    return this.gmail;
   }
 
   async getEmails(options: EmailListOptions = {}): Promise<EmailMessage[]> {
     try {
-      const response = await this.gmail.users.messages.list({
+      const gmail = await this.getGmailClient();
+      const response = await gmail.users.messages.list({
         userId: 'me',
         maxResults: options.maxResults || 10,
         q: options.q,
@@ -60,7 +84,8 @@ export class GmailClient {
 
   async getEmailById(messageId: string): Promise<EmailMessage> {
     try {
-      const response = await this.gmail.users.messages.get({
+      const gmail = await this.getGmailClient();
+      const response = await gmail.users.messages.get({
         userId: 'me',
         id: messageId,
         format: 'full',
@@ -75,7 +100,8 @@ export class GmailClient {
 
   async createLabel(name: string): Promise<any> {
     try {
-      const response = await this.gmail.users.labels.create({
+      const gmail = await this.getGmailClient();
+      const response = await gmail.users.labels.create({
         userId: 'me',
         requestBody: {
           name,
@@ -93,7 +119,8 @@ export class GmailClient {
 
   async archiveEmail(messageId: string): Promise<void> {
     try {
-      await this.gmail.users.messages.modify({
+      const gmail = await this.getGmailClient();
+      await gmail.users.messages.modify({
         userId: 'me',
         id: messageId,
         requestBody: {
@@ -108,7 +135,8 @@ export class GmailClient {
 
   async addLabel(messageId: string, labelIds: string[]): Promise<void> {
     try {
-      await this.gmail.users.messages.modify({
+      const gmail = await this.getGmailClient();
+      await gmail.users.messages.modify({
         userId: 'me',
         id: messageId,
         requestBody: {
@@ -123,7 +151,8 @@ export class GmailClient {
 
   async removeLabel(messageId: string, labelIds: string[]): Promise<void> {
     try {
-      await this.gmail.users.messages.modify({
+      const gmail = await this.getGmailClient();
+      await gmail.users.messages.modify({
         userId: 'me',
         id: messageId,
         requestBody: {
@@ -138,7 +167,8 @@ export class GmailClient {
 
   async getLabels(): Promise<any[]> {
     try {
-      const response = await this.gmail.users.labels.list({
+      const gmail = await this.getGmailClient();
+      const response = await gmail.users.labels.list({
         userId: 'me',
       });
 

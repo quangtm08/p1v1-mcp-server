@@ -3,13 +3,17 @@ import { GmailClient } from '../../gmail/client.js';
 import { SupabaseClient } from '../../database/supabase.js';
 import { GetEmailsInputSchema } from '../../database/models.js';
 
-export function getEmailsTool(gmailClient: GmailClient, supabaseClient: SupabaseClient): McpTool {
+export function getEmailsTool(supabaseClient: SupabaseClient): McpTool {
   return {
     name: 'get_emails',
     description: 'Fetch emails from Gmail with optional filtering and store metadata in Supabase',
     inputSchema: {
       type: 'object',
       properties: {
+        userId: {
+          type: 'string',
+          description: 'User ID to fetch emails for',
+        },
         maxResults: {
           type: 'number',
           description: 'Maximum number of emails to fetch (1-100)',
@@ -32,15 +36,18 @@ export function getEmailsTool(gmailClient: GmailClient, supabaseClient: Supabase
           default: false,
         },
       },
-      required: [],
+      required: ['userId'],
     },
     handler: async (args) => {
       try {
         // Validate input
         const validatedArgs = GetEmailsInputSchema.parse(args);
         
+        // Create user-specific Gmail client
+        const userGmailClient = new GmailClient(validatedArgs.userId);
+        
         // Fetch emails from Gmail
-        const emails = await gmailClient.getEmails({
+        const emails = await userGmailClient.getEmails({
           maxResults: validatedArgs.maxResults,
           q: validatedArgs.query,
           labelIds: validatedArgs.labelIds,
@@ -55,8 +62,13 @@ export function getEmailsTool(gmailClient: GmailClient, supabaseClient: Supabase
             // Extract email metadata
             const headers = email.payload.headers;
             const subject = headers.find(h => h.name === 'Subject')?.value || '';
-            const sender = headers.find(h => h.name === 'From')?.value || '';
-            const recipient = headers.find(h => h.name === 'To')?.value || '';
+            const fromAddress = headers.find(h => h.name === 'From')?.value || '';
+            const toAddresses = headers.find(h => h.name === 'To')?.value || '';
+            const ccAddresses = headers.find(h => h.name === 'Cc')?.value || '';
+            
+            // Convert comma-separated strings to arrays
+            const toAddressesArray = toAddresses ? toAddresses.split(',').map(addr => addr.trim()) : [];
+            const ccAddressesArray = ccAddresses ? ccAddresses.split(',').map(addr => addr.trim()) : [];
             const date = headers.find(h => h.name === 'Date')?.value || '';
 
             // Extract body content
@@ -76,12 +88,12 @@ export function getEmailsTool(gmailClient: GmailClient, supabaseClient: Supabase
             }
 
             // Check if email already exists in database
-            const existingEmail = await supabaseClient.getEmailByGmailId(email.id);
+            const existingEmail = await supabaseClient.getEmailByMessageId(email.id);
             
             if (existingEmail) {
               // Update existing email
               const updatedEmail = await supabaseClient.updateEmail(email.id, {
-                label_ids: email.labelIds,
+                labels: email.labelIds || [],
                 snippet: email.snippet,
                 body: body,
                 updated_at: new Date().toISOString(),
@@ -90,17 +102,19 @@ export function getEmailsTool(gmailClient: GmailClient, supabaseClient: Supabase
             } else {
               // Create new email record
               const newEmail = await supabaseClient.saveEmail({
-                gmail_id: email.id,
+                user_id: validatedArgs.userId,
+                message_id: email.id,
                 thread_id: email.threadId,
                 subject: subject,
-                sender: sender,
-                recipient: recipient,
+                from_address: fromAddress,
+                to_addresses: toAddressesArray,
+                cc_addresses: ccAddressesArray,
                 snippet: email.snippet,
                 body: body,
-                label_ids: email.labelIds,
+                labels: email.labelIds || [],
                 received_at: date,
-                is_archived: email.labelIds.includes('INBOX') ? false : true,
-                is_read: email.labelIds.includes('UNREAD') ? false : true,
+                archived: !(email.labelIds || []).includes('INBOX'),
+                raw_json: email,
               });
               processedEmails.push(newEmail);
             }
@@ -114,13 +128,14 @@ export function getEmailsTool(gmailClient: GmailClient, supabaseClient: Supabase
           success: true,
           count: processedEmails.length,
           emails: processedEmails.map(email => ({
-            id: email.gmail_id,
+            id: email.message_id,
             subject: email.subject,
-            sender: email.sender,
+            from: email.from_address,
+            to: email.to_addresses,
             snippet: email.snippet,
-            labels: email.label_ids,
+            labels: email.labels,
             received_at: email.received_at,
-            category: email.classified_category,
+            archived: email.archived,
           })),
         };
       } catch (error) {

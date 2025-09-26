@@ -19,11 +19,6 @@ async function main() {
     {
       name: process.env.MCP_SERVER_NAME || 'dream-mail-mcp-server',
       version: '1.0.0',
-    },
-    {
-      capabilities: {
-        tools: {},
-      },
     }
   );
 
@@ -32,7 +27,7 @@ async function main() {
   const supabaseClient = new SupabaseClient();
 
   // Create MCP server with tools
-  const mcpServer = createMcpServer(gmailClient, supabaseClient);
+  const mcpServer = createMcpServer(supabaseClient);
 
   // List available tools
   server.setRequestHandler(ListToolsRequestSchema, async () => {

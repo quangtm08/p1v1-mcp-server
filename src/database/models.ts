@@ -3,18 +3,21 @@ import { z } from 'zod';
 // Email schemas
 export const EmailRecordSchema = z.object({
   id: z.string().uuid(),
-  gmail_id: z.string(),
+  user_id: z.string(),
+  message_id: z.string(),
   thread_id: z.string(),
   subject: z.string(),
-  sender: z.string().email(),
-  recipient: z.string().email(),
+  from_address: z.string(),
+  to_addresses: z.any(),
+  cc_addresses: z.any().optional(),
   snippet: z.string(),
   body: z.string(),
-  label_ids: z.array(z.string()),
+  labels: z.any(),
   received_at: z.string().datetime(),
-  classified_category: z.string().optional(),
-  is_archived: z.boolean().default(false),
-  is_read: z.boolean().default(false),
+  processed_at: z.string().datetime().optional(),
+  archived: z.boolean().default(false),
+  raw_json: z.any().optional(),
+  tsv: z.string().optional(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 });
@@ -105,6 +108,7 @@ export const GmailMessageSchema = z.object({
 
 // MCP tool input schemas
 export const GetEmailsInputSchema = z.object({
+  userId: z.string(),
   maxResults: z.number().min(1).max(100).default(10),
   query: z.string().optional(),
   labelIds: z.array(z.string()).optional(),
@@ -112,12 +116,14 @@ export const GetEmailsInputSchema = z.object({
 });
 
 export const CreateLabelInputSchema = z.object({
+  userId: z.string(),
   name: z.string().min(1),
   labelListVisibility: z.enum(['labelShow', 'labelHide']).default('labelShow'),
   messageListVisibility: z.enum(['show', 'hide']).default('show'),
 });
 
 export const ArchiveEmailInputSchema = z.object({
+  userId: z.string(),
   messageId: z.string(),
 });
 

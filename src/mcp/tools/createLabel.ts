@@ -2,13 +2,17 @@ import { McpTool } from '../server.js';
 import { GmailClient } from '../../gmail/client.js';
 import { CreateLabelInputSchema } from '../../database/models.js';
 
-export function createLabelTool(gmailClient: GmailClient): McpTool {
+export function createLabelTool(): McpTool {
   return {
     name: 'create_label',
     description: 'Create a new Gmail label for organizing emails',
     inputSchema: {
       type: 'object',
       properties: {
+        userId: {
+          type: 'string',
+          description: 'User ID to create label for',
+        },
         name: {
           type: 'string',
           description: 'Name of the label to create',
@@ -27,15 +31,18 @@ export function createLabelTool(gmailClient: GmailClient): McpTool {
           default: 'show',
         },
       },
-      required: ['name'],
+      required: ['userId', 'name'],
     },
     handler: async (args) => {
       try {
         // Validate input
         const validatedArgs = CreateLabelInputSchema.parse(args);
         
+        // Create user-specific Gmail client
+        const userGmailClient = new GmailClient(validatedArgs.userId);
+        
         // Create the label in Gmail
-        const label = await gmailClient.createLabel(validatedArgs.name);
+        const label = await userGmailClient.createLabel(validatedArgs.name);
         
         return {
           success: true,

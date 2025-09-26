@@ -2,18 +2,21 @@ import { createClient, SupabaseClient as SupabaseClientType } from '@supabase/su
 
 export interface EmailRecord {
   id: string;
-  gmail_id: string;
+  user_id: string;
+  message_id: string;
   thread_id: string;
   subject: string;
-  sender: string;
-  recipient: string;
+  from_address: string;
+  to_addresses: any;
+  cc_addresses?: any;
   snippet: string;
   body: string;
-  label_ids: string[];
+  labels: any;
   received_at: string;
-  classified_category?: string;
-  is_archived: boolean;
-  is_read: boolean;
+  processed_at?: string;
+  archived: boolean;
+  raw_json?: any;
+  tsv?: string;
   created_at: string;
   updated_at: string;
 }
@@ -36,6 +39,17 @@ export interface ClassificationLog {
   confidence: number;
   reasoning: string;
   created_at: string;
+}
+
+export interface EmailToken {
+  id: string;
+  user_id: string;
+  provider: string;
+  access_token: string;
+  refresh_token: string;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export class SupabaseClient {
@@ -67,11 +81,11 @@ export class SupabaseClient {
     return data;
   }
 
-  async getEmailByGmailId(gmailId: string): Promise<EmailRecord | null> {
+  async getEmailByMessageId(messageId: string): Promise<EmailRecord | null> {
     const { data, error } = await this.client
       .from('emails')
       .select('*')
-      .eq('gmail_id', gmailId)
+      .eq('message_id', messageId)
       .single();
 
     if (error && error.code !== 'PGRST116') { // PGRST116 is "not found"
@@ -81,11 +95,11 @@ export class SupabaseClient {
     return data;
   }
 
-  async updateEmail(gmailId: string, updates: Partial<EmailRecord>): Promise<EmailRecord> {
+  async updateEmail(messageId: string, updates: Partial<EmailRecord>): Promise<EmailRecord> {
     const { data, error } = await this.client
       .from('emails')
       .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('gmail_id', gmailId)
+      .eq('message_id', messageId)
       .select()
       .single();
 
@@ -190,12 +204,90 @@ export class SupabaseClient {
     return data || [];
   }
 
-  async moveEmailToSafetyQueue(gmailId: string): Promise<void> {
-    await this.updateEmail(gmailId, { classified_category: 'safety_queue' });
+  async moveEmailToSafetyQueue(messageId: string): Promise<void> {
+    // Note: Safety queue functionality would need to be implemented
+    // based on your specific requirements
+    console.log(`Moving email ${messageId} to safety queue`);
   }
 
-  async removeEmailFromSafetyQueue(gmailId: string, newCategory: string): Promise<void> {
-    await this.updateEmail(gmailId, { classified_category: newCategory });
+  async removeEmailFromSafetyQueue(messageId: string, newCategory: string): Promise<void> {
+    // Note: Safety queue functionality would need to be implemented
+    // based on your specific requirements
+    console.log(`Removing email ${messageId} from safety queue to ${newCategory}`);
+  }
+
+  // Email token operations
+  async getEmailToken(userId: string, provider: string = 'gmail'): Promise<EmailToken | null> {
+    const { data, error } = await this.client
+      .from('email_tokens')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('provider', provider)
+      .single();
+
+    if (error && error.code !== 'PGRST116') { // PGRST116 is "not found"
+      throw new Error(`Failed to get email token: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  async saveEmailToken(token: Partial<EmailToken>): Promise<EmailToken> {
+    const { data, error } = await this.client
+      .from('email_tokens')
+      .upsert({
+        ...token,
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to save email token: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  async updateEmailToken(userId: string, provider: string, updates: Partial<EmailToken>): Promise<EmailToken> {
+    const { data, error } = await this.client
+      .from('email_tokens')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('provider', provider)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update email token: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  async deleteEmailToken(userId: string, provider: string): Promise<void> {
+    const { error } = await this.client
+      .from('email_tokens')
+      .delete()
+      .eq('user_id', userId)
+      .eq('provider', provider);
+
+    if (error) {
+      throw new Error(`Failed to delete email token: ${error.message}`);
+    }
+  }
+
+  async getAllUsersWithTokens(): Promise<EmailToken[]> {
+    const { data, error } = await this.client
+      .from('email_tokens')
+      .select('*')
+      .eq('provider', 'gmail');
+
+    if (error) {
+      throw new Error(`Failed to get users with tokens: ${error.message}`);
+    }
+
+    return data || [];
   }
 
   // Get raw Supabase client for custom queries

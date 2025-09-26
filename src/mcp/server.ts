@@ -20,7 +20,6 @@ export class McpServer {
   private tools: McpTool[] = [];
 
   constructor(
-    private gmailClient: GmailClient,
     private supabaseClient: SupabaseClient
   ) {
     this.initializeTools();
@@ -28,9 +27,9 @@ export class McpServer {
 
   private initializeTools() {
     this.tools = [
-      getEmailsTool(this.gmailClient, this.supabaseClient),
-      createLabelTool(this.gmailClient),
-      archiveEmailTool(this.gmailClient),
+      getEmailsTool(this.supabaseClient),
+      createLabelTool(),
+      archiveEmailTool(),
     ];
   }
 
@@ -42,7 +41,7 @@ export class McpServer {
     }));
   }
 
-  async handleToolCall(request: CallToolRequestSchema) {
+  async handleToolCall(request: any) {
     const { name, arguments: args } = request.params;
     
     const tool = this.tools.find(t => t.name === name);
@@ -74,6 +73,6 @@ export class McpServer {
   }
 }
 
-export function createMcpServer(gmailClient: GmailClient, supabaseClient: SupabaseClient) {
-  return new McpServer(gmailClient, supabaseClient);
+export function createMcpServer(supabaseClient: SupabaseClient) {
+  return new McpServer(supabaseClient);
 }
