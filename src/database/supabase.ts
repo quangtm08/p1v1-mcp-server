@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient as SupabaseClientType } from '@supabase/supabase-js';
+import { AdminSupabaseClient } from './admin-supabase';
 
 export interface EmailRecord {
   id: string;
@@ -52,8 +53,18 @@ export interface EmailToken {
   updated_at: string;
 }
 
+/**
+ * SupabaseClient - System operations client for MCP server
+ * 
+ * SECURITY MODEL:
+ * - Uses service role key for system operations (email processing, classification, etc.)
+ * - Has full access to all data for processing purposes
+ * - NOT for admin monitoring - use AdminSupabaseClient for that
+ * - This client is used by the MCP server to process emails across all users
+ */
 export class SupabaseClient {
   private client: SupabaseClientType;
+  private adminClient: AdminSupabaseClient;
 
   constructor() {
     const supabaseUrl = process.env.SUPABASE_URL;
@@ -64,7 +75,19 @@ export class SupabaseClient {
     }
 
     this.client = createClient(supabaseUrl, supabaseKey);
+    this.adminClient = new AdminSupabaseClient();
   }
+
+  /**
+   * Get admin client for monitoring operations (no content access)
+   */
+  getAdminClient(): AdminSupabaseClient {
+    return this.adminClient;
+  }
+
+  // ============================================================================
+  // SYSTEM OPERATIONS - Full access for email processing
+  // ============================================================================
 
   // Email operations
   async saveEmail(email: Partial<EmailRecord>): Promise<EmailRecord> {
@@ -290,6 +313,11 @@ export class SupabaseClient {
     return data || [];
   }
 
+  /**
+   * Get all users - SYSTEM OPERATION for processing emails
+   * WARNING: This returns full user data including sensitive information
+   * Use getAdminClient().getUsers() for admin monitoring instead
+   */
   async getAllUsers(): Promise<any[]> {
     // Try different possible table names for users
     const possibleTables = ['users', 'user', 'profiles', 'auth.users'];
