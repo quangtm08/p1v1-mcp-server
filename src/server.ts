@@ -9,7 +9,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const app = express();
-const port = process.env.MCP_SERVER_PORT || 3001;
+const port = parseInt(process.env.PORT || process.env.MCP_SERVER_PORT || '3001', 10);
 
 // Middleware
 app.use(cors());
@@ -389,7 +389,7 @@ app.use((req, res) => {
 });
 
 // Start server
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   console.log(`🚀 Gmail Webhook Server running on port ${port}`);
   console.log(`📧 Webhook endpoint: http://localhost:${port}/webhook/gmail`);
   console.log(`🧪 Test endpoint: http://localhost:${port}/webhook/gmail/test`);

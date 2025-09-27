@@ -10,7 +10,8 @@
     "start:webhook": "node dist/server.js",
     "dev": "tsx watch src/index.ts",
     "dev:webhook": "tsx watch src/server.ts",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "postinstall": "npm run build"
   },
   "keywords": [
     "mcp",
