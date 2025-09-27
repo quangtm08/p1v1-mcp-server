@@ -291,15 +291,27 @@ export class SupabaseClient {
   }
 
   async getAllUsers(): Promise<any[]> {
-    const { data, error } = await this.client
-      .from('users')
-      .select('*');
+    // Try different possible table names for users
+    const possibleTables = ['users', 'user', 'profiles', 'auth.users'];
+    
+    for (const tableName of possibleTables) {
+      try {
+        const { data, error } = await this.client
+          .from(tableName)
+          .select('*')
+          .limit(10); // Just get a few to test
 
-    if (error) {
-      throw new Error(`Failed to get all users: ${error.message}`);
+        if (!error && data) {
+          console.log(`Found users table: ${tableName}`);
+          return data;
+        }
+      } catch (err) {
+        // Table doesn't exist, try next one
+        continue;
+      }
     }
-
-    return data || [];
+    
+    throw new Error('Could not find users table. Tried: users, user, profiles, auth.users');
   }
 
   // Get raw Supabase client for custom queries
