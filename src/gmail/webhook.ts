@@ -57,23 +57,15 @@ export class GmailWebhookHandler {
         throw new Error('Missing emailAddress or historyId in notification');
       }
 
-      // 3. Find user by email address (simplified for testing)
-      let userId: string | null = null;
-      
-      // For testing, use the known user ID if email matches
-      if (emailAddress === 'quangtm.gp@gmail.com') {
-        userId = '62bdd1e1-68cc-49fd-b10f-3ecf45298301';
-        console.log(`Using known user ID for testing: ${userId}`);
-      } else {
-        userId = await this.findUserByEmail(emailAddress);
-        if (!userId) {
-          console.log(`No user found for email: ${emailAddress}`);
-          return {
-            success: true,
-            processed: 0,
-            error: 'No user found for this email address'
-          };
-        }
+      // 3. Find user by email address
+      const userId = await this.findUserByEmail(emailAddress);
+      if (!userId) {
+        console.log(`No user found for email: ${emailAddress}`);
+        return {
+          success: true,
+          processed: 0,
+          error: 'No user found for this email address'
+        };
       }
 
       // 4. Process new emails using history API
@@ -119,26 +111,31 @@ export class GmailWebhookHandler {
    */
   private async findUserByEmail(emailAddress: string): Promise<string | null> {
     try {
+      console.log(`🔍 Looking up user for email: ${emailAddress}`);
+      
       // Get all users with Gmail tokens and find matching email
       const usersWithTokens = await this.supabaseClient.getAllUsersWithTokens();
+      console.log(`📊 Found ${usersWithTokens.length} users with Gmail tokens`);
       
       for (const token of usersWithTokens) {
         // Create a temporary Gmail client to get the user's email
         const tempClient = new GmailClient(token.user_id);
         try {
           const profile = await tempClient.getProfile();
-          console.log(`Checking user ${token.user_id} with email: ${profile.emailAddress}`);
+          console.log(`👤 Checking user ${token.user_id} with email: ${profile.emailAddress}`);
+          
           if (profile.emailAddress === emailAddress) {
-            console.log(`Found matching user: ${token.user_id} for email: ${emailAddress}`);
+            console.log(`✅ Found matching user: ${token.user_id} for email: ${emailAddress}`);
             return token.user_id;
           }
         } catch (error) {
-          console.log(`Could not get profile for user ${token.user_id}:`, error);
+          console.log(`⚠️ Could not get profile for user ${token.user_id}:`, error instanceof Error ? error.message : String(error));
+          // Continue to next user instead of failing completely
           continue;
         }
       }
       
-      console.log(`No user found for email: ${emailAddress}`);
+      console.log(`❌ No user found for email: ${emailAddress}`);
       return null;
     } catch (error) {
       console.error('Error finding user by email:', error);

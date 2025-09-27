@@ -269,6 +269,71 @@ app.post('/gmail/create-system-labels', async (req, res) => {
   }
 });
 
+// Debug endpoint to check emails in database
+app.get('/debug/emails', async (req, res) => {
+  try {
+    const { limit = 10, userId } = req.query;
+    
+    let query = webhookHandler['supabaseClient'].getClient()
+      .from('emails')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(parseInt(limit as string));
+    
+    if (userId) {
+      query = query.eq('user_id', userId);
+    }
+    
+    const { data, error } = await query;
+    
+    if (error) {
+      throw new Error(`Failed to fetch emails: ${error.message}`);
+    }
+    
+    res.json({
+      success: true,
+      count: data?.length || 0,
+      emails: data || [],
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Debug emails error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Debug endpoint to check users with tokens
+app.get('/debug/users', async (req, res) => {
+  try {
+    const users = await webhookHandler['supabaseClient'].getAllUsersWithTokens();
+    
+    res.json({
+      success: true,
+      count: users.length,
+      users: users.map(user => ({
+        user_id: user.user_id,
+        provider: user.provider,
+        expires_at: user.expires_at,
+        created_at: user.created_at
+      })),
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Debug users error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Test endpoint for development
 app.post('/webhook/gmail/test', async (req, res) => {
   try {
