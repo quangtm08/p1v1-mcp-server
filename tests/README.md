@@ -5,6 +5,7 @@ This directory contains all test scripts and utilities for the Gmail webhook sys
 ## 📁 Test Files
 
 - `test-webhook.js` - Comprehensive webhook functionality test
+- `test-admin-isolation.js` - **Admin data isolation security test**
 - `generate-oauth-urls.js` - Generate OAuth URLs for existing users
 - `quick-test.sh` - Quick status check script
 - `test-pubsub-setup.js` - Verify Pub/Sub configuration
@@ -12,6 +13,12 @@ This directory contains all test scripts and utilities for the Gmail webhook sys
 - `test-config.env` - Test configuration file
 
 ## 🚀 Usage
+
+### Admin Security Test
+```bash
+# Test admin data isolation
+node tests/test-admin-isolation.js
+```
 
 ### Quick Test
 ```bash

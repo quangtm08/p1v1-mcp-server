@@ -11,7 +11,9 @@
     "dev": "tsx watch src/index.ts",
     "dev:webhook": "tsx watch src/server.ts",
     "clean": "rm -rf dist",
-    "postinstall": "npm run build"
+    "postinstall": "npm run build",
+    "test:admin": "node tests/test-admin-isolation.js",
+    "admin:dashboard": "node admin-tools/admin-dashboard.js"
   },
   "keywords": [
     "mcp",

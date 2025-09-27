@@ -8,7 +8,7 @@
  */
 
 import { config } from 'dotenv';
-import { AdminSupabaseClient } from './dist/database/admin-supabase.js';
+import { AdminSupabaseClient } from '../dist/database/admin-supabase.js';
 
 // Load environment variables
 config();
