@@ -33,8 +33,22 @@ export class GmailWebhookHandler {
       console.log('Received Gmail push notification:', pushData.message.messageId);
 
       // 1. Decode the base64 data
-      const decoded = this.decodeNotification(pushData.message.data);
-      console.log('Decoded notification:', decoded);
+      let decoded;
+      try {
+        decoded = this.decodeNotification(pushData.message.data);
+        console.log('Decoded notification:', decoded);
+      } catch (error) {
+        // Handle test messages gracefully
+        if (error instanceof Error && error.message.includes('Test message received')) {
+          console.log('Ignoring test message, no action needed');
+          return {
+            success: true,
+            processed: 0,
+            error: 'Test message ignored'
+          };
+        }
+        throw error;
+      }
 
       // 2. Extract emailAddress and historyId
       const { emailAddress, historyId } = decoded;
@@ -87,6 +101,13 @@ export class GmailWebhookHandler {
   private decodeNotification(data: string): DecodedNotification {
     try {
       const decoded = Buffer.from(data, 'base64').toString('utf-8');
+      
+      // Check if it's a test message (plain text, not JSON)
+      if (!decoded.startsWith('{') && !decoded.startsWith('[')) {
+        console.log('Received test message, ignoring:', decoded);
+        throw new Error('Test message received, not a Gmail notification');
+      }
+      
       return JSON.parse(decoded);
     } catch (error) {
       throw new Error(`Failed to decode notification data: ${error}`);
@@ -126,7 +147,7 @@ export class GmailWebhookHandler {
   }
 
   /**
-   * Process new emails using Gmail History API
+   * Process new emails using Gmail History API with fallback to recent emails
    */
   private async processNewEmailsFromHistory(userId: string, historyId: string): Promise<{ processed: number; message?: string }> {
     try {
@@ -135,12 +156,14 @@ export class GmailWebhookHandler {
       // Create user-specific Gmail client
       const userGmailClient = new GmailClient(userId);
       
-      // Get history changes since the last historyId
+      // First try History API
       const history = await userGmailClient.getHistory(historyId);
       
       if (!history || !history.history) {
-        console.log('No history changes found');
-        return { processed: 0, message: 'No new changes' };
+        console.log('No history changes found, trying fallback approach...');
+        
+        // Fallback: Fetch recent emails and check if they're new
+        return await this.processRecentEmailsFallback(userId);
       }
 
       let processedCount = 0;
@@ -178,7 +201,65 @@ export class GmailWebhookHandler {
 
     } catch (error) {
       console.error(`Error processing emails from history ${historyId} for user ${userId}:`, error);
-      throw error;
+      
+      // Fallback on error: try recent emails approach
+      console.log('History API failed, trying fallback approach...');
+      return await this.processRecentEmailsFallback(userId);
+    }
+  }
+
+  /**
+   * Fallback method: Process recent emails when History API doesn't work
+   */
+  private async processRecentEmailsFallback(userId: string): Promise<{ processed: number; message?: string }> {
+    try {
+      console.log('Using fallback approach: fetching recent emails');
+      
+      const userGmailClient = new GmailClient(userId);
+      
+      // Fetch recent emails from INBOX
+      const recentEmails = await userGmailClient.getEmails({
+        maxResults: 5,
+        labelIds: ['INBOX']
+      });
+      
+      console.log(`Found ${recentEmails.length} recent emails`);
+      
+      let processedCount = 0;
+      const processedEmails: string[] = [];
+      
+      // Process each recent email
+      for (const email of recentEmails) {
+        const messageId = email.id;
+        
+        // Skip if already processed in this batch
+        if (processedEmails.includes(messageId)) {
+          continue;
+        }
+        
+        try {
+          const result = await this.processNewEmail(userId, messageId);
+          if (result.emailId) {
+            processedEmails.push(messageId);
+            processedCount++;
+          }
+        } catch (error) {
+          console.error(`Error processing message ${messageId}:`, error);
+        }
+      }
+      
+      console.log(`Successfully processed ${processedCount} emails using fallback`);
+      return { 
+        processed: processedCount, 
+        message: `Processed ${processedCount} new emails (fallback)` 
+      };
+      
+    } catch (error) {
+      console.error('Error in fallback email processing:', error);
+      return { 
+        processed: 0, 
+        message: `Fallback failed: ${error instanceof Error ? error.message : String(error)}` 
+      };
     }
   }
 
@@ -256,8 +337,15 @@ export class GmailWebhookHandler {
       // Parse and format the date properly
       let parsedDate: string;
       try {
-        // Parse the RFC 2822 date format from Gmail
-        const dateObj = new Date(date);
+        // Clean the date string by removing timezone info in parentheses
+        const cleanDate = date.replace(/\s*\([^)]*\)\s*$/, '');
+        const dateObj = new Date(cleanDate);
+        
+        // Validate the date
+        if (isNaN(dateObj.getTime())) {
+          throw new Error('Invalid date');
+        }
+        
         parsedDate = dateObj.toISOString();
       } catch (error) {
         console.warn(`Failed to parse date "${date}", using current time`);
