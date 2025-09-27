@@ -16,6 +16,10 @@ build/
 .env.test.local
 .env.production.local
 
+# Test configuration (contains sensitive data)
+tests/test-config.env
+tests/.env.test
+
 # Logs
 logs
 *.log
