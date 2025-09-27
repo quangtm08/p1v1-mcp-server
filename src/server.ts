@@ -353,6 +353,28 @@ app.get('/debug/users', async (req, res) => {
   }
 });
 
+// Debug endpoint to check all users in main users table
+app.get('/debug/all-users', async (req, res) => {
+  try {
+    const allUsers = await webhookHandler['supabaseClient'].getAllUsers();
+    
+    res.json({
+      success: true,
+      count: allUsers.length,
+      users: allUsers,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Debug all users error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Test endpoint for development
 app.post('/webhook/gmail/test', async (req, res) => {
   try {

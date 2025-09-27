@@ -290,6 +290,18 @@ export class SupabaseClient {
     return data || [];
   }
 
+  async getAllUsers(): Promise<any[]> {
+    const { data, error } = await this.client
+      .from('users')
+      .select('*');
+
+    if (error) {
+      throw new Error(`Failed to get all users: ${error.message}`);
+    }
+
+    return data || [];
+  }
+
   // Get raw Supabase client for custom queries
   getClient(): SupabaseClientType {
     return this.client;
