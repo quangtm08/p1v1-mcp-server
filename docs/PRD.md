@@ -67,35 +67,42 @@
 
 ---
 
-### 2.3 Smart Classification (via MCP Agent + n8n)
 
-- MCP agent runs periodically (scheduled job), fetching new/unread emails for all users.
-- Steps:
-  1. Retrieve user tokens from Supabase; refresh if expired.
-  2. Fetch new/unread emails (not yet processed).
-  3. Check Supabase for custom rule match.
-  4. If no match → send to n8n for AI categorization.
-  5. Apply Gmail label + archive if non-urgent.
-  6. Store classification log and processed `messageId` in Supabase.
+### 2.3 Smart Classification (via MCP Batch Service + n8n)
+
+- **MCP Batch Classification Service** runs every minute, processing `classification_queue` items.
+- **Workflow:**
+  1. **Email Arrival:** Gmail webhook (Heroku) → stores email in Supabase → triggers `enqueue_classification_trigger`
+  2. **Batch Processing:** MCP service fetches unprocessed items from `classification_queue`
+  3. **Rule Check:** MCP checks Supabase `rules` table for custom matches
+  4. **AI Fallback:** If no rule match → send batch to n8n webhook for AI categorization
+  5. **Apply Actions:** MCP applies Gmail labels + archives non-urgent emails
+  6. **Logging:** Store results in `classifications` table, mark queue items as processed
 
 **Success Criteria:**
 
-- New emails labeled within ~5 seconds.
-- Classification logs written for every email.
+- New emails processed within ~5 seconds of arrival
+- Classification logs written for every email
+- Failed items retry up to 3 times with exponential backoff
 
 ---
 
 ### 2.4 Digest / Brief (Twice Daily)
 
-- MCP agent or n8n cron workflow runs 2× daily (morning + evening).
-- Fetch all emails in non-urgent categories since last digest.
-- Summarize with OpenAI API → group into bullets per category.
-- Send digest back via Gmail API.
+- **MCP Digest Batch Service** runs twice daily based on user `digest_settings`.
+- **Workflow:**
+  1. **Scheduling:** MCP creates `digest_jobs` based on user frequency/timezone settings
+  2. **Data Collection:** Fetch emails from all categories (including urgent) since last digest
+  3. **AI Summarization:** Send email batches to n8n for individual email summarization
+  4. **Storage:** Store individual summaries in `digest_entries` table with `email_ids[]`
+  5. **Delivery:** MCP sends formatted digest email via Gmail API
+- **Content:** Individual email summaries grouped by category, includes urgent emails (not archived)
 
 **Success Criteria:**
 
-- User receives digest at configured times.
-- Digest includes summaries of at least 90% of non-urgent emails.
+- User receives digest at configured times
+- Digest includes individual summaries of at least 90% of emails
+- Urgent emails remain in inbox but included in digest
 
 ---
 
@@ -135,36 +142,73 @@
 
 ## 4. Architecture
 
+
+
 ### 4.1 Execution Flow
 
-- **Workflow 1 (New Email):** MCP agent scheduled job → Supabase rule check → n8n AI fallback → Gmail label/archive → Log classification.
-- **Workflow 2 (Digest):** Cron → Supabase fetch → n8n AI summarize → Gmail send digest → Update last_digest_time.
-- **Workflow 3 (Safety Queue):** User action → Backend API updates queue → MCP agent or n8n executes Gmail action on approval.
+**Workflow 1 (New Email Processing):**
+1. Gmail webhook (Heroku) → stores email in Supabase
+2. Database trigger → adds to `classification_queue`
+3. MCP Batch Classification Service → processes queue items
+4. Rule check (Supabase) → custom rules or AI fallback (n8n)
+5. MCP applies Gmail labels + archives non-urgent emails
+6. Results stored in `classifications` table
+
+**Workflow 2 (Digest Generation):**
+1. MCP Digest Service → creates `digest_jobs` based on user settings
+2. Fetch emails from all categories since last digest
+3. Send email batches to n8n for AI summarization
+4. Store individual summaries in `digest_entries` table
+5. MCP formats and sends digest email via Gmail API
+
 
 ### 4.2 Responsibilities
 
-- **MCP Agent:** Dynamic Gmail API access, token refresh, email fetching, labeling, archiving, logging, and batching for scalability.
-- **n8n:** Orchestration (AI calls, digest, safety queue execution).
-- **Supabase:** Store users, tokens, categories, rules, logs, processed emails, safety queue.
-- **LLM (OpenAI):** Categorization, summaries, reply drafting.
-- **Frontend (React SPA):** Rule management UI, safety queue UI, digest settings.
+- **MCP Server:** 
+  - Batch Classification Service (every minute)
+  - Batch Digest Service (twice daily)
+  - Gmail API operations (labels, archiving, sending)
+  - Token management and refresh
+  - Error handling and retry logic
+- **n8n Cloud:** 
+  - AI categorization (OpenAI GPT-4o-mini)
+  - AI summarization (OpenAI GPT-4o-mini)
+  - Webhook endpoints for MCP communication
+- **Supabase:** 
+  - User data, tokens, categories, rules
+  - Email storage and classification logs
+  - Digest jobs and entries
+  - Safety queue (future)
+- **Heroku:** Gmail webhook endpoint
+- **Frontend (React SPA):** Rule management, digest settings, safety queue UI
 
 ---
 
 ## 5. Tech Stack
 
-- **Frontend:** Vite + React + TypeScript + TailwindCSS + shadcn-ui.
-- **Backend:** Supabase (Postgres, Auth, API routes/Edge functions).
-- **Automation:** MCP agent (scheduled job), n8n Cloud.
-- **LLM:** OpenAI GPT-4o-mini (categorization + summaries), GPT-4o (draft replies).
-- **Deployment:** Frontend → Vercel (or Netlify). Supabase Cloud. n8n Cloud (hosted).
+- **Frontend:** Vite + React + TypeScript + TailwindCSS + shadcn-ui
+- **Backend:** Supabase (Postgres, Auth, Row Level Security)
+- **Automation:** 
+  - MCP Server (Node.js, TypeScript)
+  - Batch Classification Service (scheduled every minute)
+  - Batch Digest Service (scheduled twice daily)
+  - n8n Cloud (AI orchestration)
+- **LLM:** OpenAI GPT-4o-mini (categorization + summaries)
+- **Deployment:** 
+  - Frontend → Vercel/Netlify
+  - MCP Server → Heroku
+  - Gmail Webhook → Heroku
+  - Supabase Cloud
+  - n8n Cloud (hosted)
 
 ---
 
 ## 6. MVP Checklist
 
-- [ ] Gmail connect + label auto-creation.
-- [ ] Categorization workflow (system + custom rules).
-- [ ] Twice-daily digest email.
-- [ ] Safety queue (approve/undo actions).
-- [ ] Draft reply generation. (last)
+- [ ] Gmail OAuth integration + system label auto-creation
+- [ ] MCP Batch Classification Service + n8n AI categorization
+- [ ] Custom rules system (Supabase + UI)
+- [ ] MCP Batch Digest Service + individual email summaries
+- [ ] Digest email delivery via Gmail API
+- [ ] Safety queue (approve/undo actions) - Phase 2
+- [ ] Draft reply generation - Phase 3

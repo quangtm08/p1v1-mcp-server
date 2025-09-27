@@ -1,0 +1,435 @@
+Database Documentation
+1. Profiles
+Purpose: Stores user account information. Serves as the central reference for most other tables.
+
+
+Key Fields:
+
+
+id (UUID) – primary key, also links to auth.users.
+
+
+display_name – user’s name.
+
+
+email – user’s email address.
+
+
+timezone – defaults to Asia/Bangkok.
+
+
+is_admin – boolean flag for admin users.
+
+
+created_at, updated_at – timestamps.
+
+
+Relations: Referenced by almost all other tables (emails, attachments, categories, classifications, digest_jobs, etc.).
+
+
+2. Attachments
+Purpose: Stores metadata about file attachments linked to emails or users.
+
+
+Key Fields:
+
+
+id (UUID) – primary key.
+
+
+email_id – links to emails.
+
+
+user_id – links to profiles.
+
+
+storage_path, filename, content_type, size.
+
+
+created_at.
+
+
+Relations:
+Foreign key to emails(id) with ON DELETE CASCADE.
+
+
+Foreign key to profiles(id).
+
+
+
+3. Categories
+Purpose: Defines categories for classifying emails.
+
+
+Key Fields:
+
+
+id (serial) – primary key.
+
+
+key – unique identifier.
+
+
+name, description.
+
+
+is_builtin – default categories vs. custom.
+
+
+created_by – links to profiles.
+
+
+
+4. Classification Queue
+Purpose: Queue system for pending classification jobs.
+
+
+Key Fields:
+
+
+id (UUID) – primary key.
+
+
+email_id – references emails.
+
+
+user_id – references profiles.
+
+
+status – defaults to 'pending'.
+
+
+attempts, payload.
+
+
+created_at, updated_at.
+
+
+Indexes: (status, created_at) for efficient queue handling.
+
+5. Classifications
+Purpose: Stores the results of classifying emails into categories.
+
+
+Key Fields:
+
+
+id (UUID) – primary key.
+
+
+email_id – references emails.
+
+
+user_id – references profiles.
+
+
+category_id and category_key.
+
+
+score, source, model, raw_response.
+
+
+created_at.
+
+
+Indexes: (email_id, created_at) for fast lookup.
+Triggers: Runs classification_safety_trigger after insert for safety checks.
+
+6. Digest Jobs
+Purpose: Represents scheduled digest emails (summaries of activity).
+
+
+Key Fields:
+
+
+id (UUID) – primary key.
+
+
+user_id – references profiles.
+
+
+scheduled_for.
+
+
+status – enum (queued, processing, sent, failed).
+
+
+payload, result.
+
+
+created_at, updated_at.
+
+
+
+7. Digest Settings
+Purpose: Stores user preferences for digest delivery.
+
+
+Key Fields:
+
+
+id (UUID) – primary key.
+
+
+user_id – references profiles.
+
+
+frequency – enum (daily, weekly, custom).
+
+
+time_of_day, timezone.
+
+
+categories – list of categories included.
+
+
+include_summary – boolean.
+
+
+last_sent_at, next_run_at.
+
+
+created_at, updated_at.
+
+
+
+8. Email Labels
+Purpose: Many-to-many relation between emails and labels.
+
+
+Key Fields:
+
+
+Composite primary key (email_id, label_id).
+
+
+email_id – references emails.
+
+
+label_id – references labels.
+
+
+
+9. Emails
+Purpose: Stores all email messages and metadata.
+
+
+Key Fields:
+
+
+id (UUID) – primary key.
+
+
+user_id – references profiles.
+
+
+message_id – unique per user.
+
+
+thread_id, subject, from_address, to_addresses, cc_addresses.
+
+
+snippet, body, labels.
+
+
+received_at, processed_at.
+
+
+archived – boolean.
+
+
+raw_json – original email payload.
+
+
+tsv – full-text search vector.
+
+
+created_at, updated_at.
+
+
+Indexes: full-text search on tsv, GIN indexes on labels and raw_json.
+Triggers:
+enqueue_classification_trigger (after insert).
+
+
+emails_tsv_trigger (before insert/update) for full-text search indexing.
+
+
+
+10. Labels
+Purpose: User-defined labels for emails.
+
+
+Key Fields:
+
+
+id (bigserial) – primary key.
+
+
+user_id – references profiles.
+
+
+name.
+
+
+created_at.
+
+
+
+11. Rule Audit
+Purpose: Logs changes made to rules by users.
+
+
+Key Fields:
+
+
+id (UUID) – primary key.
+
+
+rule_id – references rules.
+
+
+user_id – references profiles.
+
+
+changes – JSON of modifications.
+
+
+created_at.
+
+
+
+12. Rules
+Purpose: User-defined rules for processing/classifying emails.
+
+
+Key Fields:
+
+
+id (UUID) – primary key.
+
+
+user_id – references profiles.
+
+
+name, description.
+
+
+priority – numeric weight.
+
+
+enabled – boolean.
+
+
+conditions, actions – JSON definitions.
+
+
+match_type – 'any' or 'all'.
+
+
+continue_on_match – boolean.
+
+
+created_at, updated_at.
+
+
+version.
+
+
+Indexes: GIN index on conditions for fast evaluation.
+
+13. Safety Queue (Not for now)
+Purpose: Stores safety review tasks for emails flagged during classification.
+
+
+Key Fields:
+
+
+id (UUID) – primary key.
+
+
+email_id – references emails.
+
+
+user_id – references profiles.
+
+
+reason, severity (low, medium, high, critical).
+
+
+status (pending, reviewing, resolved, dismissed).
+
+
+assigned_to – reviewer (references profiles).
+
+
+notes, metadata.
+
+
+created_at, updated_at.
+
+
+Indexes: (status, created_at) with partial index for pending items.
+
+
+Got it — let’s document your new email_tokens table in the same format and style as the rest of your schema.
+
+14. Email Tokens
+Purpose: Stores OAuth tokens for connecting a user’s email account with external providers (e.g., Gmail, Outlook). Handles authentication lifecycle (access/refresh tokens, expiry) for secure API calls.
+Key Fields:
+id (UUID) – primary key.
+
+
+user_id (text) – links to profiles.id (though not a foreign key in schema). Identifies which user the token belongs to.
+
+
+provider (text) – email provider identifier (e.g., gmail, outlook).
+
+
+access_token (text) – short-lived access token for API calls.
+
+
+refresh_token (text) – long-lived token for renewing access.
+
+
+expires_at (timestamptz) – token expiry timestamp.
+
+
+created_at, updated_at (timestamptz) – record lifecycle timestamps.
+
+
+Indexes:
+Primary key: id.
+
+
+Unique constraint: (user_id, provider) – ensures a user can only have one token per provider.
+
+
+Index: (user_id) – supports quick lookups by user.
+
+
+Relations:
+Indirectly linked to profiles via user_id (but no enforced foreign key).
+
+
+Serves as the credential source for accessing external email providers in workflows involving emails and related tables.
+
+
+
+
+Summary of Relationships
+Profiles is the root entity.
+
+
+Emails belong to Profiles.
+
+
+Attachments, Labels, Classifications, Rules, Safety Queue, Digests all reference Profiles.
+
+
+Emails connect to Labels and Classifications.
+
+
+Rules and Safety Queue govern automated and manual processing of emails.
+
+

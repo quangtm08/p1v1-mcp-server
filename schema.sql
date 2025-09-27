@@ -89,6 +89,165 @@ SET default_tablespace = '';
 SET default_table_access_method = "heap";
 
 
+CREATE TABLE IF NOT EXISTS "public"."classifications" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "email_id" "uuid",
+    "user_id" "uuid",
+    "category_id" integer,
+    "category_key" "text",
+    "score" numeric,
+    "source" "text",
+    "model" "text",
+    "raw_response" "jsonb",
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."classifications" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."admin_classification_stats" AS
+ SELECT "user_id",
+    "category_key",
+    "count"(*) AS "classification_count",
+    "avg"("score") AS "avg_confidence",
+    "min"("created_at") AS "first_classification",
+    "max"("created_at") AS "last_classification"
+   FROM "public"."classifications" "c"
+  GROUP BY "user_id", "category_key";
+
+
+ALTER VIEW "public"."admin_classification_stats" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."admin_classification_stats" IS 'Admin view: Classification statistics';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."emails" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "message_id" "text" NOT NULL,
+    "thread_id" "text",
+    "subject" "text",
+    "from_address" "text",
+    "to_addresses" "text"[],
+    "cc_addresses" "text"[],
+    "snippet" "text",
+    "body" "text",
+    "labels" "text"[],
+    "received_at" timestamp with time zone,
+    "processed_at" timestamp with time zone,
+    "archived" boolean DEFAULT false,
+    "raw_json" "jsonb",
+    "tsv" "tsvector",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."emails" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."admin_email_metadata" AS
+ SELECT "id",
+    "user_id",
+    "message_id",
+    "thread_id",
+    "received_at",
+    "processed_at",
+    "archived",
+    "created_at",
+    "updated_at"
+   FROM "public"."emails";
+
+
+ALTER VIEW "public"."admin_email_metadata" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."admin_email_metadata" IS 'Admin view: Minimal email metadata - only system fields, no content or addresses';
+
+
+
+CREATE OR REPLACE VIEW "public"."admin_email_stats" AS
+ SELECT "user_id",
+    "count"(*) AS "email_count",
+    "count"(
+        CASE
+            WHEN ("archived" = true) THEN 1
+            ELSE NULL::integer
+        END) AS "archived_count",
+    "count"(
+        CASE
+            WHEN ("processed_at" IS NOT NULL) THEN 1
+            ELSE NULL::integer
+        END) AS "processed_count",
+    "count"(
+        CASE
+            WHEN ("processed_at" IS NULL) THEN 1
+            ELSE NULL::integer
+        END) AS "pending_count",
+    "min"("received_at") AS "first_email",
+    "max"("received_at") AS "last_email",
+    "count"(
+        CASE
+            WHEN ("received_at" >= ("now"() - '24:00:00'::interval)) THEN 1
+            ELSE NULL::integer
+        END) AS "emails_last_24h",
+    "count"(
+        CASE
+            WHEN ("received_at" >= ("now"() - '7 days'::interval)) THEN 1
+            ELSE NULL::integer
+        END) AS "emails_last_7d"
+   FROM "public"."emails"
+  GROUP BY "user_id";
+
+
+ALTER VIEW "public"."admin_email_stats" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."admin_email_stats" IS 'Admin view: Email statistics without content access';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."safety_queue" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "email_id" "uuid",
+    "user_id" "uuid",
+    "reason" "text",
+    "severity" "text" DEFAULT 'medium'::"text",
+    "status" "text" DEFAULT 'pending'::"text",
+    "assigned_to" "uuid",
+    "notes" "text",
+    "metadata" "jsonb",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "safety_queue_severity_check" CHECK (("severity" = ANY (ARRAY['low'::"text", 'medium'::"text", 'high'::"text", 'critical'::"text"]))),
+    CONSTRAINT "safety_queue_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'reviewing'::"text", 'resolved'::"text", 'dismissed'::"text"])))
+);
+
+
+ALTER TABLE "public"."safety_queue" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."admin_safety_queue_stats" AS
+ SELECT "user_id",
+    "severity",
+    "status",
+    "count"(*) AS "queue_count",
+    "min"("created_at") AS "oldest_item",
+    "max"("created_at") AS "newest_item"
+   FROM "public"."safety_queue" "sq"
+  GROUP BY "user_id", "severity", "status";
+
+
+ALTER VIEW "public"."admin_safety_queue_stats" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."admin_safety_queue_stats" IS 'Admin view: Safety queue statistics';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."attachments" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "email_id" "uuid",
@@ -150,21 +309,18 @@ CREATE TABLE IF NOT EXISTS "public"."classification_queue" (
 ALTER TABLE "public"."classification_queue" OWNER TO "postgres";
 
 
-CREATE TABLE IF NOT EXISTS "public"."classifications" (
+CREATE TABLE IF NOT EXISTS "public"."digest_entries" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "email_id" "uuid",
-    "user_id" "uuid",
+    "digest_job_id" "uuid" NOT NULL,
     "category_id" integer,
     "category_key" "text",
-    "score" numeric,
-    "source" "text",
-    "model" "text",
-    "raw_response" "jsonb",
+    "summary" "text",
+    "email_ids" "uuid"[] DEFAULT '{}'::"uuid"[],
     "created_at" timestamp with time zone DEFAULT "now"()
 );
 
 
-ALTER TABLE "public"."classifications" OWNER TO "postgres";
+ALTER TABLE "public"."digest_entries" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."digest_jobs" (
@@ -241,31 +397,6 @@ CREATE TABLE IF NOT EXISTS "public"."email_tokens" (
 ALTER TABLE "public"."email_tokens" OWNER TO "postgres";
 
 
-CREATE TABLE IF NOT EXISTS "public"."emails" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "user_id" "uuid" NOT NULL,
-    "message_id" "text" NOT NULL,
-    "thread_id" "text",
-    "subject" "text",
-    "from_address" "text",
-    "to_addresses" "text"[],
-    "cc_addresses" "text"[],
-    "snippet" "text",
-    "body" "text",
-    "labels" "text"[],
-    "received_at" timestamp with time zone,
-    "processed_at" timestamp with time zone,
-    "archived" boolean DEFAULT false,
-    "raw_json" "jsonb",
-    "tsv" "tsvector",
-    "created_at" timestamp with time zone DEFAULT "now"(),
-    "updated_at" timestamp with time zone DEFAULT "now"()
-);
-
-
-ALTER TABLE "public"."emails" OWNER TO "postgres";
-
-
 CREATE TABLE IF NOT EXISTS "public"."labels" (
     "id" bigint NOT NULL,
     "user_id" "uuid",
@@ -338,26 +469,6 @@ CREATE TABLE IF NOT EXISTS "public"."rules" (
 ALTER TABLE "public"."rules" OWNER TO "postgres";
 
 
-CREATE TABLE IF NOT EXISTS "public"."safety_queue" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "email_id" "uuid",
-    "user_id" "uuid",
-    "reason" "text",
-    "severity" "text" DEFAULT 'medium'::"text",
-    "status" "text" DEFAULT 'pending'::"text",
-    "assigned_to" "uuid",
-    "notes" "text",
-    "metadata" "jsonb",
-    "created_at" timestamp with time zone DEFAULT "now"(),
-    "updated_at" timestamp with time zone DEFAULT "now"(),
-    CONSTRAINT "safety_queue_severity_check" CHECK (("severity" = ANY (ARRAY['low'::"text", 'medium'::"text", 'high'::"text", 'critical'::"text"]))),
-    CONSTRAINT "safety_queue_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'reviewing'::"text", 'resolved'::"text", 'dismissed'::"text"])))
-);
-
-
-ALTER TABLE "public"."safety_queue" OWNER TO "postgres";
-
-
 ALTER TABLE ONLY "public"."categories" ALTER COLUMN "id" SET DEFAULT "nextval"('"public"."categories_id_seq"'::"regclass");
 
 
@@ -392,6 +503,11 @@ ALTER TABLE ONLY "public"."classification_queue"
 
 ALTER TABLE ONLY "public"."classifications"
     ADD CONSTRAINT "classifications_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."digest_entries"
+    ADD CONSTRAINT "digest_entries_pkey" PRIMARY KEY ("id");
 
 
 
@@ -467,6 +583,18 @@ CREATE INDEX "idx_classifications_email" ON "public"."classifications" USING "bt
 
 
 
+CREATE INDEX "idx_digest_entries_category_id" ON "public"."digest_entries" USING "btree" ("category_id");
+
+
+
+CREATE INDEX "idx_digest_entries_digest_job_id" ON "public"."digest_entries" USING "btree" ("digest_job_id");
+
+
+
+CREATE INDEX "idx_digest_entries_email_ids" ON "public"."digest_entries" USING "gin" ("email_ids");
+
+
+
 CREATE INDEX "idx_emails_labels" ON "public"."emails" USING "gin" ("labels");
 
 
@@ -536,6 +664,16 @@ ALTER TABLE ONLY "public"."classifications"
 
 ALTER TABLE ONLY "public"."classifications"
     ADD CONSTRAINT "classifications_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."profiles"("id");
+
+
+
+ALTER TABLE ONLY "public"."digest_entries"
+    ADD CONSTRAINT "digest_entries_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "public"."categories"("id");
+
+
+
+ALTER TABLE ONLY "public"."digest_entries"
+    ADD CONSTRAINT "digest_entries_digest_job_id_fkey" FOREIGN KEY ("digest_job_id") REFERENCES "public"."digest_jobs"("id") ON DELETE CASCADE;
 
 
 
@@ -651,6 +789,35 @@ CREATE POLICY "digest: update own" ON "public"."digest_settings" FOR UPDATE USIN
 
 
 
+ALTER TABLE "public"."digest_entries" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "digest_entries: delete own" ON "public"."digest_entries" FOR DELETE USING ((EXISTS ( SELECT 1
+   FROM "public"."digest_jobs" "dj"
+  WHERE (("dj"."id" = "digest_entries"."digest_job_id") AND ("dj"."user_id" = "auth"."uid"())))));
+
+
+
+CREATE POLICY "digest_entries: insert own" ON "public"."digest_entries" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."digest_jobs" "dj"
+  WHERE (("dj"."id" = "digest_entries"."digest_job_id") AND ("dj"."user_id" = "auth"."uid"())))));
+
+
+
+CREATE POLICY "digest_entries: select own" ON "public"."digest_entries" FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM "public"."digest_jobs" "dj"
+  WHERE (("dj"."id" = "digest_entries"."digest_job_id") AND ("dj"."user_id" = "auth"."uid"())))));
+
+
+
+CREATE POLICY "digest_entries: update own" ON "public"."digest_entries" FOR UPDATE USING ((EXISTS ( SELECT 1
+   FROM "public"."digest_jobs" "dj"
+  WHERE (("dj"."id" = "digest_entries"."digest_job_id") AND ("dj"."user_id" = "auth"."uid"()))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."digest_jobs" "dj"
+  WHERE (("dj"."id" = "digest_entries"."digest_job_id") AND ("dj"."user_id" = "auth"."uid"())))));
+
+
+
 ALTER TABLE "public"."digest_settings" ENABLE ROW LEVEL SECURITY;
 
 
@@ -757,6 +924,48 @@ GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."classifications" TO "anon";
+GRANT ALL ON TABLE "public"."classifications" TO "authenticated";
+GRANT ALL ON TABLE "public"."classifications" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."admin_classification_stats" TO "anon";
+GRANT ALL ON TABLE "public"."admin_classification_stats" TO "authenticated";
+GRANT ALL ON TABLE "public"."admin_classification_stats" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."emails" TO "anon";
+GRANT ALL ON TABLE "public"."emails" TO "authenticated";
+GRANT ALL ON TABLE "public"."emails" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."admin_email_metadata" TO "anon";
+GRANT ALL ON TABLE "public"."admin_email_metadata" TO "authenticated";
+GRANT ALL ON TABLE "public"."admin_email_metadata" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."admin_email_stats" TO "anon";
+GRANT ALL ON TABLE "public"."admin_email_stats" TO "authenticated";
+GRANT ALL ON TABLE "public"."admin_email_stats" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."safety_queue" TO "anon";
+GRANT ALL ON TABLE "public"."safety_queue" TO "authenticated";
+GRANT ALL ON TABLE "public"."safety_queue" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."admin_safety_queue_stats" TO "anon";
+GRANT ALL ON TABLE "public"."admin_safety_queue_stats" TO "authenticated";
+GRANT ALL ON TABLE "public"."admin_safety_queue_stats" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."attachments" TO "anon";
 GRANT ALL ON TABLE "public"."attachments" TO "authenticated";
 GRANT ALL ON TABLE "public"."attachments" TO "service_role";
@@ -781,9 +990,9 @@ GRANT ALL ON TABLE "public"."classification_queue" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."classifications" TO "anon";
-GRANT ALL ON TABLE "public"."classifications" TO "authenticated";
-GRANT ALL ON TABLE "public"."classifications" TO "service_role";
+GRANT ALL ON TABLE "public"."digest_entries" TO "anon";
+GRANT ALL ON TABLE "public"."digest_entries" TO "authenticated";
+GRANT ALL ON TABLE "public"."digest_entries" TO "service_role";
 
 
 
@@ -817,12 +1026,6 @@ GRANT ALL ON TABLE "public"."email_tokens" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."emails" TO "anon";
-GRANT ALL ON TABLE "public"."emails" TO "authenticated";
-GRANT ALL ON TABLE "public"."emails" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."labels" TO "anon";
 GRANT ALL ON TABLE "public"."labels" TO "authenticated";
 GRANT ALL ON TABLE "public"."labels" TO "service_role";
@@ -850,12 +1053,6 @@ GRANT ALL ON TABLE "public"."rule_audit" TO "service_role";
 GRANT ALL ON TABLE "public"."rules" TO "anon";
 GRANT ALL ON TABLE "public"."rules" TO "authenticated";
 GRANT ALL ON TABLE "public"."rules" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."safety_queue" TO "anon";
-GRANT ALL ON TABLE "public"."safety_queue" TO "authenticated";
-GRANT ALL ON TABLE "public"."safety_queue" TO "service_role";
 
 
 
