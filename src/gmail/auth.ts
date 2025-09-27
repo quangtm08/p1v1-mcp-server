@@ -60,6 +60,17 @@ export class GmailAuth {
     }
   }
 
+  generateAuthUrl(): string {
+    return this.oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: [
+        'https://www.googleapis.com/auth/gmail.readonly',
+        'https://www.googleapis.com/auth/gmail.modify',
+        'https://www.googleapis.com/auth/gmail.labels',
+      ],
+    });
+  }
+
   async authorize(code: string, userId?: string): Promise<void> {
     try {
       const { tokens } = await this.oauth2Client.getToken(code);

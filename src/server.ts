@@ -154,6 +154,25 @@ app.post('/webhook/gmail', async (req, res) => {
   }
 });
 
+// OAuth URL generation endpoint
+app.get('/auth/oauth-url', async (req, res) => {
+  try {
+    const gmailAuth = new GmailAuth();
+    const authUrl = gmailAuth.generateAuthUrl();
+    
+    res.json({
+      success: true,
+      authUrl,
+      message: 'Visit this URL to authorize Gmail access'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
 // Enhanced OAuth callback endpoint with complete onboarding
 app.get('/auth/callback', async (req, res) => {
   try {
