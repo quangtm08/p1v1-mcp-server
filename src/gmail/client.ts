@@ -98,6 +98,13 @@ export class GmailClient {
     }
   }
 
+  // Alias for webhook handler compatibility
+  async getEmail(messageId: string): Promise<EmailMessage> {
+    return this.getEmailById(messageId);
+  }
+
+  
+
   async createLabel(name: string): Promise<any> {
     try {
       const gmail = await this.getGmailClient();
@@ -176,6 +183,85 @@ export class GmailClient {
     } catch (error) {
       console.error('Error fetching labels:', error);
       throw new Error(`Failed to fetch labels: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Start watching for Gmail changes and send notifications to Pub/Sub
+   * This enables push notifications for new emails
+   */
+  async startWatching(userId: string): Promise<any> {
+    try {
+      const gmail = await this.getGmailClient();
+      
+      // Replace 'your-project' with your actual Google Cloud project ID
+      const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID || 'your-project';
+      const topicName = `projects/${projectId}/topics/gmail-notifications`;
+      
+      const response = await gmail.users.watch({
+        userId: 'me',
+        requestBody: {
+          topicName: topicName,
+          labelIds: ['INBOX'], // Watch for changes in INBOX
+          labelFilterAction: 'include'
+        }
+      });
+
+      console.log('Gmail watch started successfully:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Error starting Gmail watch:', error);
+      throw new Error(`Failed to start Gmail watch: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Stop watching for Gmail changes
+   */
+  async stopWatching(): Promise<void> {
+    try {
+      const gmail = await this.getGmailClient();
+      await gmail.users.stop({
+        userId: 'me'
+      });
+      console.log('Gmail watch stopped successfully');
+    } catch (error) {
+      console.error('Error stopping Gmail watch:', error);
+      throw new Error(`Failed to stop Gmail watch: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Get user profile information
+   */
+  async getProfile(): Promise<any> {
+    try {
+      const gmail = await this.getGmailClient();
+      const response = await gmail.users.getProfile({
+        userId: 'me'
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      throw new Error(`Failed to fetch profile: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Get Gmail history changes
+   */
+  async getHistory(startHistoryId: string): Promise<any> {
+    try {
+      const gmail = await this.getGmailClient();
+      const response = await gmail.users.history.list({
+        userId: 'me',
+        startHistoryId: startHistoryId,
+        historyTypes: ['messageAdded']
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching history:', error);
+      throw new Error(`Failed to fetch history: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }
