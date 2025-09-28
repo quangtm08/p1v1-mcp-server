@@ -380,9 +380,24 @@ export class GmailWebhookHandler {
 
   /**
    * Add email to classification queue for n8n processing
+   * Note: This is now handled by the database trigger enqueue_classification_trigger
+   * This method is kept for backward compatibility but should not be used
    */
   private async enqueueForClassification(emailId: string, userId: string): Promise<void> {
     try {
+      // Check if email is already in queue (to prevent duplicates from trigger)
+      const { data: existing } = await this.supabaseClient.getClient()
+        .from('classification_queue')
+        .select('id')
+        .eq('email_id', emailId)
+        .eq('status', 'pending')
+        .single();
+
+      if (existing) {
+        console.log(`Email ${emailId} already in classification queue`);
+        return;
+      }
+
       const { error } = await this.supabaseClient.getClient()
         .from('classification_queue')
         .insert({

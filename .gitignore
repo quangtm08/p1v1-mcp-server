@@ -102,3 +102,4 @@ tokens.json
 ehthumbs.db
 Thumbs.db
 .env
+.env.production

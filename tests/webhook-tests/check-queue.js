@@ -1,4 +1,4 @@
-import { SupabaseClient } from './dist/database/supabase.js';
+import { SupabaseClient } from '../../dist/database/supabase.js';
 import dotenv from 'dotenv';
 
 // Load environment variables
@@ -43,7 +43,7 @@ async function checkQueueStatus() {
     }
 
     // Separate items by status
-    const completedItems = queueItems.filter(item => item.processed_at);
+    const completedItems = queueItems.filter(item => item.processed_at || item.status === 'completed');
     const pendingItems = queueItems.filter(item => !item.processed_at && item.status === 'pending');
     const failedItems = queueItems.filter(item => item.status === 'failed');
 
